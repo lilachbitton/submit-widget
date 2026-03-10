@@ -81,6 +81,23 @@ ZOHO.embeddedApp.on("PageLoad", function(data) {
       dealName = dealResult.data[0].Deal_Name;
       log("Deal name: " + dealName);
 
+      log("Fetching org metadata to find Lenders module...");
+      return ZOHO.CRM.META.getModules();
+    })
+    .then(function(modulesResult) {
+      log("Modules response: " + (modulesResult ? "OK" : "null"));
+      if (modulesResult && modulesResult.modules) {
+        var moduleNames = modulesResult.modules.map(function(m) { return m.api_name; });
+        log("All modules: " + moduleNames.join(", "));
+        var lenderModule = modulesResult.modules.find(function(m) {
+          return m.api_name.toLowerCase().indexOf("lender") >= 0;
+        });
+        if (lenderModule) {
+          log("Found lender module: " + lenderModule.api_name + " (plural: " + lenderModule.plural_label + ")");
+        } else {
+          log("No module with 'lender' in name found!");
+        }
+      }
       log("Fetching lenders (getRecords)...");
       return ZOHO.CRM.API.getRecords({
         Entity: "Lenders",
@@ -90,7 +107,7 @@ ZOHO.embeddedApp.on("PageLoad", function(data) {
       });
     })
     .then(function(lenderResult) {
-      log("Lenders response received");
+      log("Lenders response: " + JSON.stringify(lenderResult).substring(0, 500));
       var allLenders = (lenderResult && lenderResult.data) ? lenderResult.data : [];
       log("Total lenders: " + allLenders.length);
 
@@ -106,7 +123,11 @@ ZOHO.embeddedApp.on("PageLoad", function(data) {
       document.getElementById("app").style.display = "block";
     })
     .catch(function(err) {
+      log("ERROR type: " + typeof err);
       log("ERROR: " + JSON.stringify(err));
+      if (err && err.message) log("ERROR message: " + err.message);
+      if (err && err.status) log("ERROR status: " + err.status);
+      try { log("ERROR string: " + String(err)); } catch(e) {}
       document.getElementById("loading").innerHTML = "Error - see debug log below";
     });
 });
