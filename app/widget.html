@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<script src="https://live.zwidgets.com/js-sdk/1.2/ZohoEmbededAppSDK.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; padding: 20px; background: #fff; color: #333; }
+  h3 { margin-bottom: 12px; font-size: 16px; }
+  .lender-list { max-height: 260px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 15px; }
+  .lender-item { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; cursor: pointer; transition: background 0.15s; }
+  .lender-item:hover { background: #f5f8ff; }
+  .lender-item:last-child { border-bottom: none; }
+  .lender-item input[type="checkbox"] { margin-right: 10px; cursor: pointer; width: 16px; height: 16px; }
+  .lender-item label { cursor: pointer; flex: 1; font-size: 14px; }
+  .lender-item.disabled { opacity: 0.4; cursor: not-allowed; }
+  .lender-item.disabled label { cursor: not-allowed; }
+  .info { font-weight: 600; margin-bottom: 6px; display: block; font-size: 13px; }
+  .count { color: #888; font-size: 12px; margin-bottom: 8px; display: block; }
+  textarea { width: 100%; height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; resize: vertical; font-family: inherit; font-size: 13px; }
+  textarea:focus { outline: none; border-color: #1890ff; }
+  .btn { background: #1890ff; color: #fff; border: none; padding: 10px 28px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 12px; }
+  .btn:hover { background: #40a9ff; }
+  .btn:disabled { background: #ccc; cursor: not-allowed; }
+  .error { color: #e74c3c; font-size: 12px; margin-top: 6px; display: block; min-height: 18px; }
+  .success { color: #27ae60; font-size: 14px; text-align: center; padding: 40px 20px; }
+  #loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
+  #debug { background: #f8f8f8; border: 1px solid #ddd; padding: 10px; margin-top: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; max-height: 150px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<div id="loading">Loading lenders...</div>
+<div id="debug"></div>
+
+<div id="app" style="display:none;">
+  <h3>Submit Application to Lenders</h3>
+  <span class="info">Select Lenders (max 4):</span>
+  <span id="selected-count" class="count">0 / 4 selected</span>
+  <div id="lender-list" class="lender-list"></div>
+  <span class="info">Broker Notes:</span>
+  <textarea id="broker-notes" placeholder="What does the broker need to close the deal..."></textarea>
+  <span id="error" class="error"></span>
+  <button id="submit-btn" class="btn" onclick="submitApplication()">Submit</button>
+</div>
+
+<div id="done" style="display:none;" class="success">
+  Task created successfully!<br>Closing...
+</div>
+
+<script>
+var dealId = null;
+var dealName = "";
+var MAX_LENDERS = 4;
+
+function log(msg) {
+  var d = document.getElementById("debug");
+  d.textContent += new Date().toLocaleTimeString() + ": " + msg + "\n";
+  d.scrollTop = d.scrollHeight;
+}
+
+ZOHO.embeddedApp.on("PageLoad", function(data) {
+  log("PageLoad fired");
+  log("Data keys: " + Object.keys(data).join(", "));
+  log("Data: " + JSON.stringify(data).substring(0, 300));
+
+  dealId = data.EntityId || data.entity_id || null;
+  if (Array.isArray(dealId)) dealId = dealId[0];
+
+  log("Deal ID: " + dealId);
+
+  if (!dealId) {
+    document.getElementById("loading").innerHTML = "Error: No Deal ID found in data";
+    return;
+  }
+
+  log("Fetching deal record...");
+  ZOHO.CRM.API.getRecord({ Entity: "Deals", RecordID: dealId })
+    .then(function(dealResult) {
+      log("Deal fetched OK");
+      dealName = dealResult.data[0].Deal_Name;
+      log("Deal name: " + dealName);
+
+      log("Fetching lenders (getRecords)...");
+      return ZOHO.CRM.API.getRecords({
+        Entity: "Lenders",
+        sort_by: "Name",
+        sort_order: "asc",
+        per_page: 200
+      });
+    })
+    .then(function(lenderResult) {
+      log("Lenders response received");
+      var allLenders = (lenderResult && lenderResult.data) ? lenderResult.data : [];
+      log("Total lenders: " + allLenders.length);
+
+      var activeLenders = allLenders.filter(function(l) {
+        return l.Active === true || l.Active === "true";
+      });
+      log("Active lenders: " + activeLenders.length);
+
+      var lendersToShow = activeLenders.length > 0 ? activeLenders : allLenders;
+      renderLenders(lendersToShow);
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("debug").style.display = "none";
+      document.getElementById("app").style.display = "block";
+    })
+    .catch(function(err) {
+      log("ERROR: " + JSON.stringify(err));
+      document.getElementById("loading").innerHTML = "Error - see debug log below";
+    });
+});
+
+ZOHO.embeddedApp.init();
+log("Widget initialized, waiting for PageLoad...");
+
+function renderLenders(lenders) {
+  var container = document.getElementById("lender-list");
+  if (!lenders || lenders.length === 0) {
+    container.innerHTML = '<div class="lender-item">No lenders found</div>';
+    return;
+  }
+
+  var html = "";
+  lenders.forEach(function(lender, i) {
+    var name = lender.Lender_Name || lender.Name || "Unknown";
+    html += '<div class="lender-item" id="item_' + i + '" onclick="toggleCheckbox(' + i + ')">' +
+      '<input type="checkbox" id="cb_' + i + '" data-name="' + escapeHtml(name) + '" onclick="event.stopPropagation(); updateCount();">' +
+      '<label for="cb_' + i + '">' + escapeHtml(name) + '</label>' +
+      '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function escapeHtml(str) {
+  var div = document.createElement("div");
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+function toggleCheckbox(index) {
+  var cb = document.getElementById("cb_" + index);
+  if (!cb) return;
+  var checked = document.querySelectorAll("#lender-list input[type=checkbox]:checked");
+  if (!cb.checked && checked.length >= MAX_LENDERS) {
+    document.getElementById("error").textContent = "Maximum " + MAX_LENDERS + " lenders allowed.";
+    return;
+  }
+  cb.checked = !cb.checked;
+  updateCount();
+}
+
+function updateCount() {
+  var checked = document.querySelectorAll("#lender-list input[type=checkbox]:checked");
+  document.getElementById("selected-count").textContent = checked.length + " / " + MAX_LENDERS + " selected";
+  var allItems = document.querySelectorAll(".lender-item");
+  allItems.forEach(function(item, i) {
+    var cb = document.getElementById("cb_" + i);
+    if (!cb) return;
+    if (checked.length >= MAX_LENDERS && !cb.checked) {
+      item.classList.add("disabled");
+    } else {
+      item.classList.remove("disabled");
+    }
+  });
+  if (checked.length <= MAX_LENDERS) {
+    document.getElementById("error").textContent = "";
+  }
+}
+
+function submitApplication() {
+  var selected = [];
+  document.querySelectorAll("#lender-list input[type=checkbox]:checked").forEach(function(cb) {
+    selected.push(cb.getAttribute("data-name"));
+  });
+  if (selected.length === 0) {
+    document.getElementById("error").textContent = "Please select at least one lender.";
+    return;
+  }
+
+  var notes = document.getElementById("broker-notes").value.trim();
+  var description = "Selected Lenders:\n";
+  selected.forEach(function(name) { description += "- " + name + "\n"; });
+  if (notes) { description += "\nBroker Notes:\n" + notes; }
+
+  var btn = document.getElementById("submit-btn");
+  btn.disabled = true;
+  btn.textContent = "Submitting...";
+  document.getElementById("error").textContent = "";
+
+  var tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  var dueDate = tomorrow.toISOString().split("T")[0];
+
+  ZOHO.CRM.API.insertRecord({
+    Entity: "Tasks",
+    APIData: [{
+      Subject: "Send application to lenders for " + dealName,
+      Description: description,
+      Status: "Not Started",
+      Priority: "High",
+      Due_Date: dueDate,
+      What_Id: dealId,
+      "$se_module": "Deals"
+    }],
+    Trigger: ["workflow"]
+  })
+  .then(function(response) {
+    if (response && response.data && response.data[0] && response.data[0].code === "SUCCESS") {
+      document.getElementById("app").style.display = "none";
+      document.getElementById("done").style.display = "block";
+      setTimeout(function() {
+        try { ZOHO.CRM.UI.Popup.closeReload(); } catch(e) {
+          try { ZOHO.CRM.UI.Popup.close(); } catch(e2) {}
+        }
+      }, 1500);
+    } else {
+      document.getElementById("error").textContent = "Error: " + JSON.stringify(response);
+      btn.disabled = false;
+      btn.textContent = "Submit";
+    }
+  })
+  .catch(function(err) {
+    document.getElementById("error").textContent = "Error: " + JSON.stringify(err);
+    btn.disabled = false;
+    btn.textContent = "Submit";
+  });
+}
+</script>
+
+</body>
+</html>

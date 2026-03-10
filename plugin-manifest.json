@@ -1,0 +1,12 @@
+{
+  "service": "CRM",
+  "cspDomains": {},
+  "modules": {
+    "widgets": [
+      {
+        "name": "SubmitApplication",
+        "location": "app/widget.html"
+      }
+    ]
+  }
+}
