@@ -98,8 +98,8 @@ ZOHO.embeddedApp.on("PageLoad", function(data) {
           log("No module with 'lender' in name found!");
         }
       }
-      log("Fetching lenders (getRecords)...");
-      return ZOHO.CRM.API.getRecords({
+      log("Fetching lenders (getAllRecords)...");
+      return ZOHO.CRM.API.getAllRecords({
         Entity: "Lenders",
         sort_by: "Name",
         sort_order: "asc",
