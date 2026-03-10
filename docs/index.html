@@ -7,25 +7,28 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; padding: 20px; background: #fff; color: #333; }
   h3 { margin-bottom: 12px; font-size: 16px; }
-  .lender-list { max-height: 260px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 15px; }
-  .lender-item { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; cursor: pointer; transition: background 0.15s; }
-  .lender-item:hover { background: #f5f8ff; }
+  .lender-list { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 15px; }
+  .lender-item { padding: 10px 12px; border-bottom: 1px solid #e8e8e8; transition: background 0.15s; }
   .lender-item:last-child { border-bottom: none; }
-  .lender-item input[type="checkbox"] { margin-right: 10px; cursor: pointer; width: 16px; height: 16px; }
-  .lender-item label { cursor: pointer; flex: 1; font-size: 14px; }
+  .lender-header { display: flex; align-items: center; cursor: pointer; }
+  .lender-header:hover { background: #f5f8ff; }
+  .lender-item input[type="checkbox"] { margin-right: 10px; cursor: pointer; width: 16px; height: 16px; flex-shrink: 0; }
+  .lender-item label { cursor: pointer; flex: 1; font-size: 14px; font-weight: 500; }
   .lender-item.disabled { opacity: 0.4; cursor: not-allowed; }
   .lender-item.disabled label { cursor: not-allowed; }
+  .lender-notes { margin-top: 6px; margin-left: 26px; display: none; }
+  .lender-notes textarea { width: 100%; height: 55px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; font-family: inherit; font-size: 12px; }
+  .lender-notes textarea:focus { outline: none; border-color: #1890ff; }
+  .lender-notes-label { font-size: 11px; color: #888; margin-bottom: 3px; display: block; }
   .info { font-weight: 600; margin-bottom: 6px; display: block; font-size: 13px; }
   .count { color: #888; font-size: 12px; margin-bottom: 8px; display: block; }
-  textarea { width: 100%; height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 6px; resize: vertical; font-family: inherit; font-size: 13px; }
-  textarea:focus { outline: none; border-color: #1890ff; }
   .btn { background: #1890ff; color: #fff; border: none; padding: 10px 28px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 12px; }
   .btn:hover { background: #40a9ff; }
   .btn:disabled { background: #ccc; cursor: not-allowed; }
   .error { color: #e74c3c; font-size: 12px; margin-top: 6px; display: block; min-height: 18px; }
   .success { color: #27ae60; font-size: 14px; text-align: center; padding: 40px 20px; }
   #loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
-  #debug { background: #f8f8f8; border: 1px solid #ddd; padding: 10px; margin-top: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; max-height: 150px; overflow-y: auto; }
+  #debug { background: #f8f8f8; border: 1px solid #ddd; padding: 10px; margin-top: 10px; font-size: 11px; font-family: monospace; white-space: pre-wrap; max-height: 150px; overflow-y: auto; display: none; }
 </style>
 </head>
 <body>
@@ -38,8 +41,6 @@
   <span class="info">Select Lenders (max 4):</span>
   <span id="selected-count" class="count">0 / 4 selected</span>
   <div id="lender-list" class="lender-list"></div>
-  <span class="info">Broker Notes:</span>
-  <textarea id="broker-notes" placeholder="What does the broker need to close the deal..."></textarea>
   <span id="error" class="error"></span>
   <button id="submit-btn" class="btn" onclick="submitApplication()">Submit</button>
 </div>
@@ -61,44 +62,21 @@ function log(msg) {
 
 ZOHO.embeddedApp.on("PageLoad", function(data) {
   log("PageLoad fired");
-  log("Data keys: " + Object.keys(data).join(", "));
   log("Data: " + JSON.stringify(data).substring(0, 300));
 
   dealId = data.EntityId || data.entity_id || null;
   if (Array.isArray(dealId)) dealId = dealId[0];
-
   log("Deal ID: " + dealId);
 
   if (!dealId) {
-    document.getElementById("loading").innerHTML = "Error: No Deal ID found in data";
+    document.getElementById("loading").innerHTML = "Error: No Deal ID found";
     return;
   }
 
-  log("Fetching deal record...");
   ZOHO.CRM.API.getRecord({ Entity: "Deals", RecordID: dealId })
     .then(function(dealResult) {
-      log("Deal fetched OK");
       dealName = dealResult.data[0].Deal_Name;
       log("Deal name: " + dealName);
-
-      log("Fetching org metadata to find Lenders module...");
-      return ZOHO.CRM.META.getModules();
-    })
-    .then(function(modulesResult) {
-      log("Modules response: " + (modulesResult ? "OK" : "null"));
-      if (modulesResult && modulesResult.modules) {
-        var moduleNames = modulesResult.modules.map(function(m) { return m.api_name; });
-        log("All modules: " + moduleNames.join(", "));
-        var lenderModule = modulesResult.modules.find(function(m) {
-          return m.api_name.toLowerCase().indexOf("lender") >= 0;
-        });
-        if (lenderModule) {
-          log("Found lender module: " + lenderModule.api_name + " (plural: " + lenderModule.plural_label + ")");
-        } else {
-          log("No module with 'lender' in name found!");
-        }
-      }
-      log("Fetching lenders (getAllRecords)...");
       return ZOHO.CRM.API.getAllRecords({
         Entity: "Lenders",
         sort_by: "Name",
@@ -107,7 +85,6 @@ ZOHO.embeddedApp.on("PageLoad", function(data) {
       });
     })
     .then(function(lenderResult) {
-      log("Lenders response: " + JSON.stringify(lenderResult).substring(0, 500));
       var allLenders = (lenderResult && lenderResult.data) ? lenderResult.data : [];
       log("Total lenders: " + allLenders.length);
 
@@ -119,15 +96,12 @@ ZOHO.embeddedApp.on("PageLoad", function(data) {
       var lendersToShow = activeLenders.length > 0 ? activeLenders : allLenders;
       renderLenders(lendersToShow);
       document.getElementById("loading").style.display = "none";
-      document.getElementById("debug").style.display = "none";
       document.getElementById("app").style.display = "block";
     })
     .catch(function(err) {
-      log("ERROR type: " + typeof err);
       log("ERROR: " + JSON.stringify(err));
       if (err && err.message) log("ERROR message: " + err.message);
-      if (err && err.status) log("ERROR status: " + err.status);
-      try { log("ERROR string: " + String(err)); } catch(e) {}
+      document.getElementById("debug").style.display = "block";
       document.getElementById("loading").innerHTML = "Error - see debug log below";
     });
 });
@@ -145,10 +119,16 @@ function renderLenders(lenders) {
   var html = "";
   lenders.forEach(function(lender, i) {
     var name = lender.Lender_Name || lender.Name || "Unknown";
-    html += '<div class="lender-item" id="item_' + i + '" onclick="toggleCheckbox(' + i + ')">' +
-      '<input type="checkbox" id="cb_' + i + '" data-name="' + escapeHtml(name) + '" onclick="event.stopPropagation(); updateCount();">' +
-      '<label for="cb_' + i + '">' + escapeHtml(name) + '</label>' +
-      '</div>';
+    html += '<div class="lender-item" id="item_' + i + '">' +
+      '<div class="lender-header" onclick="toggleCheckbox(' + i + ')">' +
+        '<input type="checkbox" id="cb_' + i + '" data-name="' + escapeHtml(name) + '" onclick="event.stopPropagation(); toggleCheckbox(' + i + ', true);">' +
+        '<label for="cb_' + i + '">' + escapeHtml(name) + '</label>' +
+      '</div>' +
+      '<div class="lender-notes" id="notes_' + i + '">' +
+        '<span class="lender-notes-label">What does the broker need from ' + escapeHtml(name) + '?</span>' +
+        '<textarea id="ta_' + i + '" placeholder="Enter broker notes for ' + escapeHtml(name) + '..."></textarea>' +
+      '</div>' +
+    '</div>';
   });
   container.innerHTML = html;
 }
@@ -159,15 +139,34 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function toggleCheckbox(index) {
+function toggleCheckbox(index, fromCheckbox) {
   var cb = document.getElementById("cb_" + index);
   if (!cb) return;
+
   var checked = document.querySelectorAll("#lender-list input[type=checkbox]:checked");
-  if (!cb.checked && checked.length >= MAX_LENDERS) {
-    document.getElementById("error").textContent = "Maximum " + MAX_LENDERS + " lenders allowed.";
-    return;
+
+  // If clicking the row (not the checkbox directly), toggle the checkbox
+  if (!fromCheckbox) {
+    if (!cb.checked && checked.length >= MAX_LENDERS) {
+      document.getElementById("error").textContent = "Maximum " + MAX_LENDERS + " lenders allowed.";
+      return;
+    }
+    cb.checked = !cb.checked;
+  } else {
+    // Checkbox was clicked directly - check if we need to prevent it
+    if (cb.checked && checked.length > MAX_LENDERS) {
+      cb.checked = false;
+      document.getElementById("error").textContent = "Maximum " + MAX_LENDERS + " lenders allowed.";
+      return;
+    }
   }
-  cb.checked = !cb.checked;
+
+  // Show/hide notes textarea
+  var notesDiv = document.getElementById("notes_" + index);
+  if (notesDiv) {
+    notesDiv.style.display = cb.checked ? "block" : "none";
+  }
+
   updateCount();
 }
 
@@ -190,19 +189,28 @@ function updateCount() {
 }
 
 function submitApplication() {
-  var selected = [];
+  var entries = [];
   document.querySelectorAll("#lender-list input[type=checkbox]:checked").forEach(function(cb) {
-    selected.push(cb.getAttribute("data-name"));
+    var index = cb.id.replace("cb_", "");
+    var name = cb.getAttribute("data-name");
+    var ta = document.getElementById("ta_" + index);
+    var notes = ta ? ta.value.trim() : "";
+    entries.push({ name: name, notes: notes });
   });
-  if (selected.length === 0) {
+
+  if (entries.length === 0) {
     document.getElementById("error").textContent = "Please select at least one lender.";
     return;
   }
 
-  var notes = document.getElementById("broker-notes").value.trim();
-  var description = "Selected Lenders:\n";
-  selected.forEach(function(name) { description += "- " + name + "\n"; });
-  if (notes) { description += "\nBroker Notes:\n" + notes; }
+  // Build description with per-lender notes
+  var description = "";
+  entries.forEach(function(entry, i) {
+    if (i > 0) description += "\n";
+    description += entry.name + "\n";
+    description += entry.notes || "(no notes)";
+    description += "\n";
+  });
 
   var btn = document.getElementById("submit-btn");
   btn.disabled = true;
@@ -218,7 +226,7 @@ function submitApplication() {
     APIData: [{
       Subject: "Send application to lenders for " + dealName,
       Description: description,
-      Status: "Not Started",
+      Status: "New",
       Priority: "High",
       Due_Date: dueDate,
       What_Id: dealId,
