@@ -236,6 +236,13 @@ function submitApplication() {
   })
   .then(function(response) {
     if (response && response.data && response.data[0] && response.data[0].code === "SUCCESS") {
+      // Send webhook to Make with deal ID
+      fetch("https://hook.eu1.make.com/8ubpwhpr9dolcc6e265mh7hd3pkq8w76", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deal_id: dealId })
+      }).catch(function() {});
+
       document.getElementById("app").style.display = "none";
       document.getElementById("done").style.display = "block";
       setTimeout(function() {
